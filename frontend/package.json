@@ -1,0 +1,21 @@
+{
+  "name": "ai-twitter-bot",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-icons": "^1.1.0",
+    "solid-js": "^1.8.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.15",
+    "postcss": "^8.4.24",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.3.3",
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.7.0"
+  }
+}

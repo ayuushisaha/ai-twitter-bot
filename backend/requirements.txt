@@ -1,0 +1,14 @@
+fastapi[all]
+uvicorn
+python-dotenv
+passlib[bcrypt]
+python-jose
+pydantic
+langchain
+openai
+langchain-groq
+langchain-community
+langchain-core
+python-multipart
+google-generativeai
+httpx
