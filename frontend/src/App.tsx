@@ -36,7 +36,7 @@ export default function App() {
   const [tweets, setTweets] = createSignal<any[]>([]);
   const [searchTerm, setSearchTerm] = createSignal("");
 
-  const LOCAL_BACKEND_URL = "http://127.0.0.1:8000";
+  const LOCAL_BACKEND_URL = "https://ai-twitter-bot-ayu.onrender.com";
 
   const handleAuthSubmit = (event: Event) => {
     event.preventDefault();
