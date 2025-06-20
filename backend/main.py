@@ -1,20 +1,25 @@
+# backend/main.py
+
+# --- Standard Library Imports ---
 import os
 import random
 import time
 from datetime import datetime
-from dotenv import load_dotenv
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
+# --- Third-Party Library Imports ---
+from dotenv import load_dotenv # Used to load environment variables from .env file
+from fastapi import FastAPI, HTTPException, Request # No Depends needed without database
+from fastapi.middleware.cors import CORSMiddleware # For Cross-Origin Resource Sharing
 from pydantic import BaseModel, Field, ValidationError, root_validator
-import httpx # Essential for communicating with the external Twitter Clone API
+import httpx # For making HTTP requests to external APIs
 
-# LangChain for AI generation (using simulated responses)
+# --- LangChain Imports for AI generation ---
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
 # --- Load Environment Variables ---
+# This must be called early to load keys like TWITTER_CLONE_API_KEY
 load_dotenv()
 
 # --- FastAPI App Initialization ---
@@ -23,23 +28,28 @@ app = FastAPI(
     description="Backend to proxy calls to external Twitter Clone API and provide AI tweet generation.",
     version="1.0.0"
 )
+
+# --- Root Endpoint for Health Check ---
 @app.get("/")
 async def read_root():
+    """Basic endpoint to confirm the backend is running."""
     return {"message": "Hello from your FastAPI backend!"}
 
-# --- CORS Configuration ---
+# --- CORS Configuration (UPDATED for Cloudflare Pages and Render, and local dev) ---
 origins = [
     "http://localhost",
-    "http://localhost:5173", # Your Solid.js frontend's default development URL
-    "http://localhost:5174", # Another common Vite development port
+    "http://localhost:5173",  # Your Solid.js frontend's default development URL
+    "http://localhost:5174",  # Another common Vite development port
+    "https://ai-twitter-bot.pages.dev",  # **CRITICAL: Your deployed Cloudflare Pages frontend URL**
+    "https://ai-twitter-bot-ayu.onrender.com", # Your deployed Render backend URL (if backend makes requests to itself)
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=origins,         # Specifies which origins are allowed to make requests
+    allow_credentials=True,        # Allows cookies/authorization headers to be sent
+    allow_methods=["*"],           # Allows all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],           # Allows all headers in the request
 )
 
 # --- Pydantic Models ---
@@ -49,34 +59,30 @@ class PostTweetRequest(BaseModel):
 class TweetResponse(BaseModel):
     username: str
     text: str
-    timestamp: str # Expecting string from external API, will parse for sorting
+    timestamp: str
     likes: int = 0
     retweets: int = 0
     id: int | None = None
 
     @root_validator(pre=True)
     def set_text_from_content(cls, values):
-        # This validator ensures 'text' is populated from 'content' if 'text' is missing
         if 'text' not in values and 'content' in values:
             values['text'] = values['content']
-        # Fallback if neither 'text' nor 'content' is present
         if 'text' not in values:
             values['text'] = 'No content provided'
         return values
-
 
 class MessageResponse(BaseModel):
     message: str
     tweet_id: str | None = None
 
-# CRITICAL FIX: BaseBaseModel -> BaseModel (already done in previous step, confirming it's here)
 class AIdeaResponse(BaseModel):
     idea: str
 
 # --- AI Configuration (Simulated Only) ---
 SIMULATED_AI_TWEET_IDEAS = [
     "Exploring the latest in web development. What new tech are you excited about? #WebDev #Tech",
-    "Just finished a great book on [topic]! Highly recommend it. � #Reading",
+    "Just finished a great book on [topic]! Highly recommend it. 📖 #Reading",
     "The future of AI is fascinating. What ethical considerations should we prioritize?",
     "Enjoying a productive coding session. What's your secret to staying focused? #CodingLife",
     "Coffee break! ☕ What's your go-to beverage for creative thinking?",
@@ -88,8 +94,9 @@ SIMULATED_AI_TWEET_IDEAS = [
 ]
 
 async def get_ai_generated_tweet(topic: str) -> str:
+    """Simulates an AI tweet generation response."""
     print(f"Backend: Using simulated AI generation for topic: '{topic}'")
-    time.sleep(random.uniform(0.8, 2.5))
+    time.sleep(random.uniform(0.8, 2.5)) # Simulate network delay
     return random.choice(SIMULATED_AI_TWEET_IDEAS)
 
 ai_tweet_generation_chain = (
@@ -100,16 +107,16 @@ ai_tweet_generation_chain = (
 
 # --- External Twitter Clone API Configuration ---
 EXTERNAL_TWITTER_CLONE_BASE_URL = "https://twitterclone-server-2xz2.onrender.com"
-TWITTER_CLONE_API_KEY = os.getenv("TWITTER_CLONE_API_KEY", "")
-# This username ('ayushi') is used for filtering posts and setting the username when posting
+TWITTER_CLONE_API_KEY = os.getenv("TWITTER_CLONE_API_KEY", "") # Loaded from environment
+# Derive username from API key, default to 'ayushi' if key not set
 EXTERNAL_TWITTER_USERNAME = TWITTER_CLONE_API_KEY.split('_')[0] if TWITTER_CLONE_API_KEY else "ayushi"
 
-# --- API Endpoints ---
+# --- API Endpoints (Current Proxy Logic - No DB Interaction) ---
 
 @app.post("/proxy-post-tweet", response_model=MessageResponse, status_code=201)
 async def proxy_post_tweet(request_data: PostTweetRequest):
     """
-    Proxies a tweet posting request from the frontend to the external Twitter Clone API.
+    Proxies a tweet posting request to the external Twitter Clone API.
     """
     if not TWITTER_CLONE_API_KEY:
         raise HTTPException(status_code=500, detail="Backend: TWITTER_CLONE_API_KEY not configured in environment variables.")
@@ -129,6 +136,7 @@ async def proxy_post_tweet(request_data: PostTweetRequest):
             external_data = res.json()
             tweet_id_str = str(external_data.get("tweet_id")) if external_data.get("tweet_id") is not None else None
             print(f"Backend: Successfully proxied tweet. External API response: {external_data}")
+
             return {"message": external_data.get("message", "Tweet proxied successfully!"), "tweet_id": tweet_id_str}
         except httpx.HTTPStatusError as e:
             print(f"Backend: HTTP error proxying tweet: {e.response.status_code} - {e.response.text}")
@@ -181,8 +189,6 @@ async def get_user_tweets():
                 if not isinstance(tweet_data, dict):
                     print(f"Backend: Warning: Skipping malformed tweet data (not a dictionary): {tweet_data}")
                     continue
-
-                # print(f"Backend: Checking tweet from '{tweet_data.get('username')}' against target '{EXTERNAL_TWITTER_USERNAME}'. Content: '{tweet_data.get('content')}'")
                 
                 if tweet_data.get("username") == EXTERNAL_TWITTER_USERNAME:
                     try:
@@ -193,8 +199,6 @@ async def get_user_tweets():
                         print(f"Backend: Validation Error parsing filtered tweet: {tweet_data} - {ve.errors()}")
                     except Exception as parse_e:
                         print(f"Backend: General Error parsing filtered tweet: {tweet_data} - {parse_e}")
-                # else:
-                    # print(f"Backend: Skipping tweet from non-matching user: {tweet_data.get('username')}")
             
             print(f"Backend: Found {len(filtered_tweets_for_frontend)} tweets for '{EXTERNAL_TWITTER_USERNAME}' after filtering and parsing.")
 
@@ -203,7 +207,6 @@ async def get_user_tweets():
                 if isinstance(t.get('timestamp'), str)
                 else datetime.min
             ), reverse=True)
-
 
             return filtered_tweets_for_frontend
         except httpx.HTTPStatusError as e:
