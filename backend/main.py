@@ -23,6 +23,9 @@ app = FastAPI(
     description="Backend to proxy calls to external Twitter Clone API and provide AI tweet generation.",
     version="1.0.0"
 )
+@app.get("/")
+async def read_root():
+    return {"message": "Hello from your FastAPI backend!"}
 
 # --- CORS Configuration ---
 origins = [
